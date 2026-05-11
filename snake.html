@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snake Game</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #e0e0e0;
+    }
+
+    h1 {
+      font-size: 2rem;
+      color: #4ade80;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    #score-board {
+      display: flex;
+      gap: 3rem;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      color: #a0a0c0;
+    }
+
+    #score-board span {
+      color: #f0f0f0;
+      font-weight: bold;
+    }
+
+    #canvas-wrapper {
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      border: 3px solid #4ade80;
+      border-radius: 4px;
+      box-shadow: 0 0 24px #4ade8055;
+    }
+
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 10, 30, 0.85);
+      border-radius: 2px;
+      gap: 0.75rem;
+    }
+
+    #overlay h2 {
+      font-size: 1.8rem;
+      color: #4ade80;
+      letter-spacing: 0.15em;
+    }
+
+    #overlay p {
+      color: #a0c0ff;
+      font-size: 0.95rem;
+    }
+
+    #overlay .final-score {
+      font-size: 1.2rem;
+      color: #fbbf24;
+    }
+
+    #controls {
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: #606080;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Snake</h1>
+  <div id="score-board">
+    <div>Score: <span id="score">0</span></div>
+    <div>Best: <span id="best">0</span></div>
+  </div>
+  <div id="canvas-wrapper">
+    <canvas id="game" width="400" height="400"></canvas>
+    <div id="overlay">
+      <h2>SNAKE</h2>
+      <p>Press <strong>Enter</strong> or <strong>Space</strong> to start</p>
+      <p>Arrow keys or WASD to move</p>
+    </div>
+  </div>
+  <div id="controls">Arrow keys / WASD to steer &nbsp;|&nbsp; Enter / Space to start / restart</div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const scoreEl = document.getElementById('score');
+    const bestEl = document.getElementById('best');
+
+    const CELL = 20;
+    const COLS = canvas.width / CELL;   // 20
+    const ROWS = canvas.height / CELL;  // 20
+    const TICK = 120; // ms per frame
+
+    const DIR = { UP: 0, RIGHT: 1, DOWN: 2, LEFT: 3 };
+    const VEC = [
+      { x: 0, y: -1 },
+      { x: 1,  y: 0 },
+      { x: 0,  y: 1 },
+      { x: -1, y: 0 },
+    ];
+
+    let snake, dir, nextDir, food, score, best, running, lastTick, animId;
+
+    best = parseInt(localStorage.getItem('snake-best') || '0', 10);
+    bestEl.textContent = best;
+
+    function randomCell(exclude) {
+      let cell;
+      do {
+        cell = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+      } while (exclude.some(s => s.x === cell.x && s.y === cell.y));
+      return cell;
+    }
+
+    function init() {
+      const cx = Math.floor(COLS / 2);
+      const cy = Math.floor(ROWS / 2);
+      snake = [
+        { x: cx,     y: cy },
+        { x: cx - 1, y: cy },
+        { x: cx - 2, y: cy },
+      ];
+      dir = DIR.RIGHT;
+      nextDir = DIR.RIGHT;
+      score = 0;
+      scoreEl.textContent = 0;
+      food = randomCell(snake);
+      running = true;
+      lastTick = null;
+      overlay.style.display = 'none';
+    }
+
+    function showOverlay(title, lines) {
+      overlay.innerHTML = `<h2>${title}</h2>${lines.map(l => `<p>${l}</p>`).join('')}`;
+      overlay.style.display = 'flex';
+    }
+
+    function step() {
+      const head = snake[0];
+      const v = VEC[nextDir];
+      dir = nextDir;
+      const next = { x: head.x + v.x, y: head.y + v.y };
+
+      // Wall collision
+      if (next.x < 0 || next.x >= COLS || next.y < 0 || next.y >= ROWS) {
+        return gameOver();
+      }
+      // Self collision (skip tail since it will move)
+      if (snake.slice(0, -1).some(s => s.x === next.x && s.y === next.y)) {
+        return gameOver();
+      }
+
+      snake.unshift(next);
+
+      if (next.x === food.x && next.y === food.y) {
+        score++;
+        scoreEl.textContent = score;
+        if (score > best) {
+          best = score;
+          bestEl.textContent = best;
+          localStorage.setItem('snake-best', best);
+        }
+        food = randomCell(snake);
+      } else {
+        snake.pop();
+      }
+    }
+
+    function gameOver() {
+      running = false;
+      cancelAnimationFrame(animId);
+      draw();
+      showOverlay('GAME OVER', [
+        `<span class="final-score">Score: ${score}</span>`,
+        'Press <strong>Enter</strong> or <strong>Space</strong> to restart',
+      ]);
+    }
+
+    function draw() {
+      // Background
+      ctx.fillStyle = '#0d1117';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Grid (subtle)
+      ctx.strokeStyle = '#1a2030';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x <= COLS; x++) {
+        ctx.beginPath(); ctx.moveTo(x * CELL, 0); ctx.lineTo(x * CELL, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y <= ROWS; y++) {
+        ctx.beginPath(); ctx.moveTo(0, y * CELL); ctx.lineTo(canvas.width, y * CELL); ctx.stroke();
+      }
+
+      // Food
+      const fx = food.x * CELL + CELL / 2;
+      const fy = food.y * CELL + CELL / 2;
+      ctx.fillStyle = '#f87171';
+      ctx.beginPath();
+      ctx.arc(fx, fy, CELL / 2 - 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Snake
+      snake.forEach((seg, i) => {
+        const shade = i === 0 ? '#4ade80' : `hsl(142, 60%, ${Math.max(28, 50 - i)}%)`;
+        ctx.fillStyle = shade;
+        ctx.beginPath();
+        ctx.roundRect(seg.x * CELL + 1, seg.y * CELL + 1, CELL - 2, CELL - 2, 4);
+        ctx.fill();
+
+        // Eyes on head
+        if (i === 0) {
+          ctx.fillStyle = '#0d1117';
+          const v = VEC[dir];
+          const perp = { x: -v.y, y: v.x };
+          for (const side of [1, -1]) {
+            const ex = seg.x * CELL + CELL / 2 + v.x * 4 + perp.x * side * 3;
+            const ey = seg.y * CELL + CELL / 2 + v.y * 4 + perp.y * side * 3;
+            ctx.beginPath();
+            ctx.arc(ex, ey, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      });
+    }
+
+    function loop(ts) {
+      if (!running) return;
+      animId = requestAnimationFrame(loop);
+      if (!lastTick) lastTick = ts;
+      if (ts - lastTick >= TICK) {
+        lastTick = ts;
+        step();
+        if (running) draw();
+      }
+    }
+
+    function startGame() {
+      if (animId) cancelAnimationFrame(animId);
+      init();
+      draw();
+      animId = requestAnimationFrame(loop);
+    }
+
+    const OPPOSITE = [DIR.DOWN, DIR.LEFT, DIR.UP, DIR.RIGHT];
+
+    document.addEventListener('keydown', e => {
+      let wanted = null;
+      switch (e.key) {
+        case 'ArrowUp':    case 'w': case 'W': wanted = DIR.UP;    break;
+        case 'ArrowRight': case 'd': case 'D': wanted = DIR.RIGHT; break;
+        case 'ArrowDown':  case 's': case 'S': wanted = DIR.DOWN;  break;
+        case 'ArrowLeft':  case 'a': case 'A': wanted = DIR.LEFT;  break;
+        case 'Enter': case ' ':
+          if (!running) { startGame(); return; }
+          break;
+      }
+      // Prevent reversing into self and suppress page scroll
+      if (wanted !== null) {
+        e.preventDefault();
+        if (wanted !== OPPOSITE[dir]) nextDir = wanted;
+      }
+    });
+
+    // Initial draw behind overlay
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  </script>
+</body>
+</html>
